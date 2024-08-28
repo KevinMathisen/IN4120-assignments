@@ -111,27 +111,19 @@ class InMemoryInvertedIndex(InvertedIndex):
         further details.
         """
 
-        print("Building index...")
-
         for document in self._corpus:
+            term_freq_doc = Counter("")
 
             for field in fields:
-
-                # Get terms from each field in the document
+                # Get terms from each field in the document and add them to the document term counter
                 terms = self.get_terms(document.get_field(field, ""))
+                term_freq_doc.update(Counter(terms))
 
-                term_freq = Counter(terms)
+            # For each unique term, add it to the dictionary and add the docID to the posting list
+            for term in sorted(term_freq_doc):
+                term_id = self._add_to_dictionary(term)
+                self._append_to_posting_list(term_id, document.get_document_id(), term_freq_doc[term], compressed)
 
-                # For each unique term, add it to the dictionary and add the docID to the posting list
-                for term in sorted(term_freq):
-
-                    # print("adding term " + term)
-
-                    term_id = self._add_to_dictionary(term)
-
-                    self._append_to_posting_list(term_id, document.get_document_id(), term_freq[term], compressed)
-
-        # Finally call _finalize_index
         self._finalize_index()
 
     def _add_to_dictionary(self, term: str) -> int:
@@ -148,21 +140,14 @@ class InMemoryInvertedIndex(InvertedIndex):
         merge them when querying the inverted index.
         """
 
-        # print("appending document " + str(document_id) + " to posting list for term " + str(term_id) + "with term freq " + str(term_frequency))
-
         # If the term does not have a posting list, append one to self._posting_list
         # Assumes that the _dictionary class assigns term_ids sequentially
         if len(self._posting_lists) <= term_id:
             self._posting_lists.append((CompressedInMemoryPostingList if compressed else InMemoryPostingList)())
 
-        # Use the term_id to get the posting list
-        posting_list = self._posting_lists[term_id]
-
-        # add a new posting to posting list, which includes doc_id and term freq
-        new_posting = Posting(document_id, term_frequency)
-
-        ## Assume that document IDs gets added in rising order 
-        posting_list.append_posting(new_posting)
+        # Append document to end of posting list
+        #    Assume that document IDs gets added in rising order 
+        self._posting_lists[term_id].append_posting(Posting(document_id, term_frequency))
 
     def _finalize_index(self):
         """
@@ -172,8 +157,6 @@ class InMemoryInvertedIndex(InvertedIndex):
         """
         for posting_list in self._posting_lists:
             posting_list.finalize_postings()
-       
-        print('Index finalized')
 
     def get_terms(self, buffer: str) -> Iterator[str]:
         # In a serious large-scale application there could be field-specific tokenizers.
@@ -189,17 +172,17 @@ class InMemoryInvertedIndex(InvertedIndex):
     def get_postings_iterator(self, term: str) -> Iterator[Posting]:
         term_id = self._dictionary.get_term_id(term)
         if term_id == None:
-            return
+            return iter([])
 
         return self._posting_lists[term_id].get_iterator()
 
     def get_document_frequency(self, term: str) -> int:
         term_id = self._dictionary.get_term_id(term)
         if term_id == None:
-            return
+            return 0
         
         # return length of posting list
-        self._posting_lists[term_id].get_length()
+        return self._posting_lists[term_id].get_length()
 
 class DummyInMemoryInvertedIndex(InMemoryInvertedIndex):
     """
