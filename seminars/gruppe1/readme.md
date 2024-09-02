@@ -1,6 +1,9 @@
 # Gruppe 1
+Velkommen til gruppe 1!  
 
-Onsdager 10:15 - 12 @ Fortress
+Vi har gruppetimer på [Fortress](https://ifirom.no/fortress) på Onsdager 10:15-12:00.  
 
-TA: @trulshes
+Ellers er jeg tilgjengelig på e-post (trulshes@uio.no) eller Mattermost (trulshes).
 
+## Ukentlig oversikt
+1. [Invertert indeks, postinglister, tips til assignment A](https://github.com/aohrn/in3120-2024/tree/main/seminars/gruppe1/uke01)
