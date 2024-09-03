@@ -27,6 +27,7 @@ class PostingsMerger:
         posting1 = next(iter1, None)
         posting2 = next(iter2, None)
 
+        # Yield posting with average of posting frequency when equal doc id
         while posting1 and posting2:
             if posting1.document_id == posting2.document_id:
                 yield Posting(posting1.document_id, int(round((posting1.term_frequency+posting2.term_frequency)/2)))
@@ -49,26 +50,28 @@ class PostingsMerger:
         posting1 = next(iter1, None)
         posting2 = next(iter2, None)
 
-        while posting1 and posting2:
-            if posting1.document_id == posting2.document_id:
+        while posting1 or posting2:
+            # If reached end of one iter, yield all remaining postings
+            if not posting2:
+                yield posting1
+                posting1 = next(iter1, None)
+            elif not posting1:
+                yield posting2
+                posting2 = next(iter1, None)
+
+            # Yield average of two posting frequency when equal doc id
+            elif posting1.document_id == posting2.document_id:
                 yield Posting(posting1.document_id, int(round((posting1.term_frequency+posting2.term_frequency)/2)))
                 posting1 = next(iter1, None)
                 posting2 = next(iter2, None)
+
+            # Yield smallest posting and iterate if not the same
             elif posting1.document_id < posting2.document_id:
                 yield posting1
                 posting1 = next(iter1, None)
             else:
                 yield posting2
                 posting2 = next(iter2, None)
-
-        # If either iter1 or iter2 has more postings, yield them
-        while posting1:
-            yield posting1
-            posting1 = next(iter1, None)
-
-        while posting2:
-            yield posting2
-            posting2 = next(iter2, None)
 
     @staticmethod
     def difference(iter1: Iterator[Posting], iter2: Iterator[Posting]) -> Iterator[Posting]:
@@ -82,6 +85,7 @@ class PostingsMerger:
         posting1 = next(iter1, None)
         posting2 = next(iter2, None)
 
+        # Yield postings which only exist in iter 1
         while posting1 and posting2:
             if posting1.document_id == posting2.document_id:
                 posting1 = next(iter1, None)
