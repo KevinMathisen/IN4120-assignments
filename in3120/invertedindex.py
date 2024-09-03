@@ -119,9 +119,13 @@ class InMemoryInvertedIndex(InvertedIndex):
                 terms = self.get_terms(document.get_field(field, ""))
                 term_freq_doc.update(Counter(terms))
 
-            # For each unique term, add it to the dictionary and add the docID to the posting list
+            # For each unique term, add it to the dictionary and create a postingslists if needed, and add the docID to the posting list
             for term in sorted(term_freq_doc):
                 term_id = self._add_to_dictionary(term)
+
+                if len(self._posting_lists) <= term_id:     # Assumes that the _dictionary class assigns term_ids sequentially
+                    self._posting_lists.append((CompressedInMemoryPostingList if compressed else InMemoryPostingList)())
+
                 self._append_to_posting_list(term_id, document.get_document_id(), term_freq_doc[term], compressed)
 
         self._finalize_index()
@@ -140,13 +144,8 @@ class InMemoryInvertedIndex(InvertedIndex):
         merge them when querying the inverted index.
         """
 
-        # If the term does not have a posting list, append one to self._posting_list
-        # Assumes that the _dictionary class assigns term_ids sequentially
-        if len(self._posting_lists) <= term_id:
-            self._posting_lists.append((CompressedInMemoryPostingList if compressed else InMemoryPostingList)())
-
         # Append document to end of posting list
-        #    Assume that document IDs gets added in rising order 
+        #    Assume that document IDs from corpus to be indexed are retrieved in rising order 
         self._posting_lists[term_id].append_posting(Posting(document_id, term_frequency))
 
     def _finalize_index(self):
