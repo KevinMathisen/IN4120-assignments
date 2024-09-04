@@ -45,11 +45,8 @@ class SuffixArray:
             # Insert document content into haystack as (<doc_id>, <content>)
             self.__haystack.append((document.get_document_id(), document_content))
 
-            # Find offsets for all suffices in document_content
-            document_term_positions = self.__tokenizer.spans(document_content)
-
-            # Insert offsets into the suffixes as [doc_id, offset]   
-            for term_position in document_term_positions:
+            # Find and insert offsets for all suffixes as [doc_id, offset]   
+            for term_position in self.__tokenizer.spans(document_content):
                 self.__suffixes.append((len(self.__haystack)-1, term_position[0]))
 
         # Sort all suffixes based on the lexicographical order of the haystack/content
@@ -117,7 +114,6 @@ class SuffixArray:
 
         # Find where we should start our search
         iterator_index = self.__binary_search(normalized_query)
-
         document_frequency = Counter("")
 
         # Check if the first match contains the query
@@ -130,14 +126,14 @@ class SuffixArray:
 
             document_frequency[self.__get_doc_id_from_suffix_index(iterator_index)] += 1
 
-        # (<frequency>, <document>) list
+        # Convert Counter to array of (<frequency>, <document_id>), compatible with Sieve
         documents_found = [(document_frequency[doc_id], doc_id) for doc_id in sorted(document_frequency)]
 
-        # Cut off and rank documents based on their score
+        # Cut off and rank documents based on their score, using the max hit_count when provided
         documents_sieve = Sieve(options["hit_count"] if options["hit_count"] else len(documents_found))
         documents_sieve.sift2(documents_found)
 
-        # Return all documents within cutoff with the highest score
+        # Return all documents within cutoff arranged by score
         for document in documents_sieve.winners():
             yield {"score": document[0], "document": self.__corpus.__getitem__(document[1])}
 
