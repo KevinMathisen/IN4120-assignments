@@ -9,6 +9,7 @@ from collections import Counter
 from .corpus import Corpus
 from .normalizer import Normalizer
 from .tokenizer import Tokenizer
+from .sieve import Sieve
 
 
 class SuffixArray:
@@ -35,16 +36,19 @@ class SuffixArray:
         """
         for document in self.__corpus:
             document_content = ""
-            for field in fields:
-                document_content += self.__normalize(document.get_field(field, ""))
 
-            # Insert document content into haystack as [doc_id, content]
+            # Normalize and combine all fields in the document
+            for field in fields:
+                document_content += (self.__normalize(document.get_field(field, "")) + " ")
+            document_content = document_content.strip()
+
+            # Insert document content into haystack as (<doc_id>, <content>)
             self.__haystack.append((document.get_document_id(), document_content))
 
             # Find offsets for all suffices in document_content
             document_term_positions = self.__tokenizer.spans(document_content)
 
-            # Insert these into the suffixes as [doc_id, offset]   
+            # Insert offsets into the suffixes as [doc_id, offset]   
             for term_position in document_term_positions:
                 self.__suffixes.append((len(self.__haystack)-1, term_position[0]))
 
@@ -56,7 +60,8 @@ class SuffixArray:
         Produces a normalized version of the given string. Both queries and documents need to be
         identically processed for lookups to succeed.
         """
-        return self.__normalizer.normalize(buffer)
+        tokens = self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer))
+        return self.__normalizer.normalize(self.__tokenizer.join(tokens))
 
     def __binary_search(self, needle: str) -> int:
         """
@@ -74,16 +79,16 @@ class SuffixArray:
 
         while True:
             # If we only have one suffix left to search, this is where the query should have been inserted
-            if search_start_index == search_end_index:
+            if search_start_index >= search_end_index:
                 return search_start_index
             
             # Find the suffix content of the middle suffix in our search area
             evaluating_index = int((search_end_index-search_start_index)/2) + search_start_index
-            evaluating_content = self.__haystack[self.__suffixes[evaluating_index][0]][1][self.__suffixes[evaluating_index][1]:]
+            evaluating_content = self.__get_suffix_from_suffix_index(evaluating_index)
 
             # Check if the current suffix matches the query, or if we need to search lower or higher in the suffix array
             if needle == evaluating_content:
-                return evaluating_content
+                return evaluating_index
             elif needle < evaluating_content:
                 search_end_index = evaluating_index-1
             else:
@@ -106,11 +111,39 @@ class SuffixArray:
         The results yielded back to the client are dictionaries having the keys "score" (int) and
         "document" (Document).
         """
-        # move up and down from the retrieved index, checking as long as the retrieved content for each suffix matches the query
-        # count the amount of times each document_id is referenced by suffixes which match
+        normalized_query = self.__normalize(query)
+        if normalized_query == "":
+            return iter([])
 
-        # sort the documents found by their count
-        # cut off any documents after specified hit_count
-        
-        # return documents from corpus and their score
-        pass
+        # Find where we should start our search
+        iterator_index = self.__binary_search(normalized_query)
+
+        document_frequency = Counter("")
+
+        # Check if the first match contains the query
+        if self.__get_suffix_from_suffix_index(iterator_index).startswith(normalized_query):
+            document_frequency[self.__get_doc_id_from_suffix_index(iterator_index)] += 1
+
+        # Move down the array as long the predix match, counting the amount of times each document appear
+        while iterator_index+1 < len(self.__suffixes) and self.__get_suffix_from_suffix_index(iterator_index+1).startswith(normalized_query):
+            iterator_index += 1
+
+            document_frequency[self.__get_doc_id_from_suffix_index(iterator_index)] += 1
+
+        # (<frequency>, <document>) list
+        documents_found = [(document_frequency[doc_id], doc_id) for doc_id in sorted(document_frequency)]
+
+        # Cut off and rank documents based on their score
+        documents_sieve = Sieve(options["hit_count"] if options["hit_count"] else len(documents_found))
+        documents_sieve.sift2(documents_found)
+
+        # Return all documents within cutoff with the highest score
+        for document in documents_sieve.winners():
+            yield {"score": document[0], "document": self.__corpus.__getitem__(document[1])}
+
+    def __get_suffix_from_suffix_index(self, suffix_index: int) -> str:
+        return self.__haystack[self.__suffixes[suffix_index][0]][1][self.__suffixes[suffix_index][1]:]
+    
+    def __get_doc_id_from_suffix_index(self, suffix_index: int) -> str:
+        return self.__haystack[self.__suffixes[suffix_index][0]][0]
+    
