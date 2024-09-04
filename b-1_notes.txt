@@ -1,0 +1,50 @@
+build simple suffix index
+	construction (indexing)
+		take in documents and their text
+		
+		separate each document into suffixes
+			these should be represented as integers, pointing towards the real text position
+			int pairs, one for the document id, and one for the position of suffix
+		
+		sort all suffixes lexicographically
+			can use in built sort
+			
+
+	search (evaluation)
+		take in query, e.g. "to the be"
+		
+		do binary search with the query
+			logarithmic
+			retrieve value in the middle of range
+				recursively do the same based on if the value is less or smaller than desired
+			
+
+		when found a matching prefix, check surrounding elements until all matching found
+
+		count how many times various documents were matched, and sort them according to this
+			use of Seive helper class?
+
+Implement version of Aho-Corasick Algorithm
+
+	given trie (dictionary), e.g.
+		harry potter
+		wizard 
+		harry
+		pott
+
+	given text buffer, e.g. 
+		a wizard named harry potter
+
+	should efficiently detect trie entries which exist in buffer
+		harry potter, wizard, and harry should all match
+		
+	stringfinder
+		scans buffer once -> find all dictionary entries which occur in buffer
+
+		dictionary is represented by Trie class
+
+		efficient for typical searches
+			linear in input buffer
+			almost insensitive to size of dictionary
+
+		return results in order of input buffer
