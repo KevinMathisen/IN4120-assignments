@@ -1,3 +1,5 @@
+i første test, skal ban
+
 build simple suffix index
 	construction (indexing)
 		take in documents and their text
@@ -20,31 +22,195 @@ build simple suffix index
 			
 
 		when found a matching prefix, check surrounding elements until all matching found
+			check first
+			if there are more to check (not end)
+				check as long as matching and not end
+				
 
 		count how many times various documents were matched, and sort them according to this
 			use of Seive helper class?
 
 Implement version of Aho-Corasick Algorithm
 
-	given trie (dictionary), e.g.
-		harry potter
-		wizard 
-		harry
-		pott
+	example
+		given trie (dictionary), e.g.
+			harry potter
+			wizard 
+			harry
+			pott
 
-	given text buffer, e.g. 
-		a wizard named harry potter
+		given text buffer, e.g. 
+			a wizard named harry potter
 
-	should efficiently detect trie entries which exist in buffer
-		harry potter, wizard, and harry should all match
+		should efficiently detect trie entries which exist in buffer
+			harry potter, wizard, and harry should all match
 		
 	stringfinder
-		scans buffer once -> find all dictionary entries which occur in buffer
+		overview
+			scans buffer once -> find all dictionary entries which occur in buffer
 
-		dictionary is represented by Trie class
+			dictionary is represented by Trie class
 
-		efficient for typical searches
-			linear in input buffer
-			almost insensitive to size of dictionary
+			efficient for typical searches
+				linear in input buffer
+				almost insensitive to size of dictionary
 
-		return results in order of input buffer
+			return results in order of input buffer
+
+		algorithm
+
+			use keywords (dictionary) to construct a finite state pattern mactfhing machine
+				takes time proportional to length of sum of keywords
+
+				
+
+			use pattern matching machine to process the text string in a single pass
+				takes independent long in relation to keywords'
+
+				takes buffer as input, returns keywords matching
+					successively reading each symbol in string, making state transistions
+
+				consists of several states
+					0 - start state, root of all keywords
+					one state for each "symbol" in the pattern matching machine 
+					
+				three functions
+					goto function G
+						tells next place to look if success, 
+								or to call the fail function (when no arrow)
+								or to call the output function? (when marked as output)
+							does this for each state-input symbol pair 
+						g(0, h) = 1
+						g(0, z) = fail (absence of arrow)
+		
+					failure function F
+						tells where to look if failure
+
+					output function Output					
+						tells what keyword to output given index success
+							because some states are marked as output, indicating set of keywords matched
+
+				operating cycle
+					index, input_symbol
+					if g(index, input_symbol) = next_index
+						make goto transistion, entering state next_index and iterating to the next input_symbol
+
+						also, if output(next_index) is successfull, return keywords and position of input_symbol
+
+					if g(index, input_symbol) = fail
+						
+						make failure transistion, entering state from failure, keeping the input_symbol
+
+						do not check input, simply call g(next_index, input_symbol)   	(maybe not check output here either)			
+
+
+				code
+					state = 0
+					
+					# For each input symbol
+					for input_index in range(0, len(input_buffer)-1):
+
+						# do operation cycles 
+						
+
+						# find state where the input_symbol is found
+						while g(state, input[input_index]) = fail
+							state = f(state)
+
+						# input symbol match found
+						state = g(state, input_symbol)
+
+						if output(state) != empty:
+							yield (state, keywords)
+
+				construction of functions goto, failure, and output
+					1. determine states and goto function
+						create trie from keywords (where each node is symbol, state_num pair)
+							each end of keyword should be marked in output function as state->set of keywords ending here
+
+						also add to goto() that at state=0 it returns 0 when no match found (instead of returing failure)
+
+					code
+						# assume that output(s) return empty when nothing for s is found
+						# and that goto(s, symbol) returns fail when nothing is found, and returns fail if symbol is not defined (null)
+						#
+						# enter(keyword) inserts into graph a path for the keyword
+
+						global newstate = 0
+						for all keywords
+							enter(keywords)
+						for all symbols where g(0, symbol) = fail:
+							g(0, symbol) = 0
+
+						def enter(keyword )
+							state = 0
+							key_index = 0
+
+							while g(state, symbol) != fail		# move down the tree until we find a node where the next step is not defined (end up with last correct state)
+								state = g(state, kw[key_index])		# or until the whole keyword has been found									(end up with last correct state)
+								key_index += 1
+
+							for index in range(key_index, length_keyword) # go through the rest of the keyword (if there is anything left)
+								newstate = newstate + 1
+								g(state, keyword[index]) = newstate			# in the state we ended up in, define the next step for each symbol
+								state = newstate							
+
+							output(state) = keyword				# update output when we have reached the end of where the keyword is placed
+
+					2. compute failure function (and complete output)
+
+						compute for all states depth 1, then 2, etc (not for 0)
+
+							depth1 -> f() = 0
+							
+							depth n: 
+								use fail for (1 to n-1) and goto for n-1
+
+							for each state S in depth n we want to define failure function
+
+								for each state n-1 called r:
+
+									for symbol in any_symbol:
+										if g(r, symbol) = fail		# try to find any previous states which are not a dead end
+											continue				# if none are found, nothing happens and no failure will be defined
+
+										state = f(r)  # get failure of previous depth for the symbol
+										
+										while g(state, symbol) == fail:  # move up the trie untill we find a state which points towards the symbol 
+											state = f(state)  			 #    or at worst until we go to the root/state 0
+
+										save that f(S) = g(state, symbol)
+										also, update output
+											output(S) += output(g(state, symbol)) 	# update output for S to also include output in the new place it points
+											
+					code
+						# uses completed goto and partially completed output
+						#
+
+						queue = []
+
+						# for all defined symbols 'a' from root
+							queue += g(0, a) # save all states  in depth 1
+							f(g(0, a)) = 0 	 # set failure for all states in depth 1 to state 0
+
+						# for all remaning states 
+						while queue != []:
+							state = next(queue)
+
+							# For all symbols 'a' that state points to
+								
+								queue += g(state, a) # save all states in next depth pointing to
+
+								next_state = f(state) # retrieve the fail for current state
+
+								while g(next_state, a) = fail:  # move up the "failure tree" from where the current state pointed, until finding the same letter we are now pointing to
+									next_state = f(state)
+
+								f(g(state, a)) = g(next_state, a)   # save the failure of the symbol that 'a' points to, to be where we found the earliest with same symbol
+																	#    is root (state 0) if no other states are found
+
+
+								output(g(state, a)) += output(g(next_state, a)) # also, update output for state pointing to to include output of failure
+
+						
+					can also use f() to create gen_f() to avoid unnecessary failure 
