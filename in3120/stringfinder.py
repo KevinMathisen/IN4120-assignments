@@ -27,6 +27,12 @@ class StringFinder:
         self.__normalizer = normalizer  # The same as was used for trie building.
         self.__tokenizer = tokenizer  # The same as was used for trie building.
 
+        self.__output: Dict[Trie, List[str]] = {}
+        self.__failure: Dict[Trie, Trie] = {}   # key: node to find failure for, value: where to move if key has failure
+
+        self.__build_output()
+        self.__build_failure()
+
     def scan(self, buffer: str) -> Iterator[Dict[str, Any]]:
         """
         Scans the given buffer and finds all dictionary entries in the trie that are also present in the
@@ -45,4 +51,92 @@ class StringFinder:
         In a serious application we'd add more lookup/evaluation features, e.g., support for prefix matching,
         support for leftmost-longest matching (instead of reporting all matches), and more.
         """
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        space_normalized_buffer = self.__tokenizer.join(self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer)))
+        normalized_buffer = self._get_buffer_normalized(buffer)
+
+        node = self.__trie
+
+        for buffer_symbol_index in range(0, len(normalized_buffer)):
+            buffer_symbol = normalized_buffer[buffer_symbol_index]
+
+            # Find node containing input symbol, by using fail() to iterate through new nodes
+            while node.child(buffer_symbol) == None and node != self.__trie:
+                node = self.__failure[node]
+
+            if node == self.__trie and node.child(buffer_symbol) == None:
+                continue
+
+            # move to node matching the input symbol
+            node = node.child(buffer_symbol)
+
+            # Check if output found
+            outputs = self.__output.get(node, [])
+            for output in outputs:
+                end_buffer = buffer_symbol_index+1
+                start_buffer = end_buffer - len(output)
+
+                # check if start and ends on space
+                if (start_buffer == 0 or normalized_buffer[start_buffer-1] == " ") and (end_buffer == len(normalized_buffer) or normalized_buffer[end_buffer] == " "):
+                    return_value = {"match": output, "surface": space_normalized_buffer[start_buffer:end_buffer], 
+                       "meta": node.get_meta(), "span": (start_buffer, end_buffer)}
+                    print(return_value)
+                    yield return_value
+
+        print("goodbye world!")
+
+    def __build_output(self):
+        # Builds the output by saving where each term ends in the trie, and their value
+
+        queue: List[Tuple[Trie, List[str]]] = []
+        node: Trie = self.__trie # root
+        current_term: List[str] = []
+
+        queue.append((self.__trie, []))
+
+        while len(queue) != 0:
+            node, current_term = queue.pop(0)
+
+            # If node is end of a term, save it to output
+            if node.is_final():
+                self.__output[node] = ["".join(current_term)]
+
+            # Add next characters in queue if any
+            for symbol in node.transitions():
+                queue.append((node.child(symbol), current_term+[symbol]))        
+
+    def __build_failure(self):
+        # Builds a failure tree by saving where the scan should move if a failure occurs during scan
+        queue: List[Trie] = []
+
+        # Point all nodes with depth 1 to root
+        for symbol in self.__trie.transitions():
+            queue.append(self.__trie.child(symbol))
+            self.__failure[self.__trie.child(symbol)] = self.__trie
+        
+        # Iterate through all nodes, one layer at a time
+        while len(queue) != 0:
+            node = queue.pop(0)
+
+            # For all next nodes for the current node
+            for symbol in node.transitions():
+                queue.append(node.child(symbol))
+                
+                # Find a node to point to in case of failure by iterating through the fail tree
+                #   until we find another node which points to the same symbol, or we reach the root
+                fail_node = self.__failure[node]
+                while fail_node.child(symbol) == None and fail_node != self.__trie:
+                    fail_node = self.__failure[fail_node]
+
+                # Save the found node to point to in case of failure (root if none found)
+                if fail_node == self.__trie and fail_node.child(symbol) == None:
+                    self.__failure[node.child(symbol)] = self.__trie
+                else:
+                    self.__failure[node.child(symbol)] = fail_node.child(symbol)
+                
+                # Update the output of the node to include the fail nodes output if any
+                if fail_node.child(symbol) in self.__output:
+                    self.__output.setdefault(node.child(symbol), []).extend(self.__output[fail_node.child(symbol)])
+
+    def _get_buffer_normalized(self, buffer: str) -> str:
+        tokens = self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer))
+        return self.__normalizer.normalize(self.__tokenizer.join(tokens))
