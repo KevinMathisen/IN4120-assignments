@@ -1,4 +1,15 @@
-i første test, skal ban
+note innlevering
+	Begynte å løse obligen før Aleksander/gruppelærer forklarte at man kunne bruke live_states, 
+		og gikk derfor utifra at man skulle implementere flere aspekter av Aho-Corasick algoritmen, innkludert bruken av failure trær. 
+	Løsningen min er derfor lenger enn 12 linjer (kanskje 60 linjer med kode, 130 med whitespace/kommentarer). 
+	Det som gjorde løsningen mest komplisert, og det som tok mest tid, var ikke å implementere aho corasick algoritmen, men å få den til å passe til Aleksander sine tester.
+		Spesifikt tror jeg over halvparten av arbeidet bare gikk til at man skulle returnere posisjonen til matchen i orginalbufferet, noe som viste seg litt knotete med min implementasjon av aho corasick som utgangspunkt
+
+	Likevel tror jeg løsningen jeg skrev er mer effektiv enn hvis man skulle brukt live_states, ettersom at den bruker failure trees og ikke trenger å vurdere flere states hver tur. 
+	Men dette kommer på bekostning av at den tar lenger tid å initialisere stringfinder, siden failure og output må bygges (som beskrevet i aho corasick algoritmen)
+
+	Håper det går fint at jeg løste på denne måten, selv om denne sannynligvis blir vanskligere å rette. Alle testene kjører uten problemer i hvert fall.
+
 
 build simple suffix index
 	construction (indexing)
