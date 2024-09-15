@@ -51,8 +51,9 @@ class StringFinder:
         In a serious application we'd add more lookup/evaluation features, e.g., support for prefix matching,
         support for leftmost-longest matching (instead of reporting all matches), and more.
         """
-        space_normalized_buffer = self.__tokenizer.join(self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer)))
-        normalized_buffer = self._get_buffer_normalized(buffer)
+        # space_normalized_buffer = self.__tokenizer.join(self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer)))    # Used for outputting surface
+        normalized_buffer = self._get_buffer_normalized(buffer)                                                             # Used for matching with trie  
+        org_term_positions = self._get_normalized_span_to_span_mapping(self.__tokenizer.tokens(buffer))                          # Used for finding buffer span values
 
         node = self.__trie
 
@@ -62,7 +63,7 @@ class StringFinder:
             # Find node containing input symbol, by using fail() to iterate through new nodes
             while node.child(buffer_symbol) == None and node != self.__trie:
                 node = self.__failure[node]
-
+            # If no matching node found, continue to next symbol in buffer
             if node == self.__trie and node.child(buffer_symbol) == None:
                 continue
 
@@ -71,18 +72,25 @@ class StringFinder:
 
             # Check if output found
             outputs = self.__output.get(node, [])
-            for output in outputs:
-                end_buffer = buffer_symbol_index+1
-                start_buffer = end_buffer - len(output)
+            for match in outputs:
+                match = self._generate_output(match, buffer_symbol_index, buffer, org_term_positions, node.get_meta())
+                if match:
+                    yield match
 
-                # check if start and ends on space
-                if (start_buffer == 0 or normalized_buffer[start_buffer-1] == " ") and (end_buffer == len(normalized_buffer) or normalized_buffer[end_buffer] == " "):
-                    return_value = {"match": output, "surface": space_normalized_buffer[start_buffer:end_buffer], 
-                       "meta": node.get_meta(), "span": (start_buffer, end_buffer)}
-                    print(return_value)
-                    yield return_value
 
-        print("goodbye world!")
+    def _generate_output(self, match: str, match_position: int, buffer: str, org_term_positions: int, meta: Any) -> Dict[str, Any]:
+        # Retrieve positions needed for generating output
+        start_pos_buffer = org_term_positions.get((match_position - len(match) + 1, True), -1)
+        end_pos_buffer = org_term_positions.get((match_position+1, False), -1)
+
+        surface = self.__tokenizer.join(self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer[start_pos_buffer:end_pos_buffer])))
+
+        # Check if match starts and ends at terms
+        if start_pos_buffer == -1 or end_pos_buffer == -1:
+            return None
+
+        return {"match": match, "surface": surface, 
+                       "meta": meta, "span": (start_pos_buffer, end_pos_buffer)}
 
     def __build_output(self):
         # Builds the output by saving where each term ends in the trie, and their value
@@ -117,7 +125,6 @@ class StringFinder:
         while len(queue) != 0:
             node = queue.pop(0)
 
-            # For all next nodes for the current node
             for symbol in node.transitions():
                 queue.append(node.child(symbol))
                 
@@ -137,6 +144,30 @@ class StringFinder:
                 if fail_node.child(symbol) in self.__output:
                     self.__output.setdefault(node.child(symbol), []).extend(self.__output[fail_node.child(symbol)])
 
+    def _get_normalized_span_to_span_mapping(self, tokens: Iterator[Tuple[str, Tuple[int, int]]]) -> Dict[int, Tuple[int, bool]]:
+        # this function is for mapping tokens from the original buffer to their equivalent in the normalized buffer
+        # if achieves this by going through all original tokens,  and calculating the position these are placed in the final normalised buffer
+        #   by using their length (after normalisation) 
+        
+        span_mapping = {}
+        normalised_term_start_pos = 0
+        end_pos_last_org_term = 0
+        length_last_org_term = 0
+        for org_term in tokens:
+            # Calculate if there was space between this token and the last one
+            space = 0 if org_term[1][0] - end_pos_last_org_term == 0 else 1
+            space = 0 if end_pos_last_org_term == 0 else space
+            normalised_term_start_pos += length_last_org_term+space # Jump to place of next term in normalised buffer
+            end_pos_last_org_term = org_term[1][1]
+
+            # Cant assume that term length after normalization is same as before
+            length_org_term = len(self.__normalizer.normalize(self.__normalizer.canonicalize(org_term[0])))
+            span_mapping[(normalised_term_start_pos, True)] = org_term[1][0] # Save start position of term to the place it appears in normalised buffer
+            span_mapping[(normalised_term_start_pos+length_org_term, False)] = org_term[1][1] # Save end position of term to the place it appear in normalised buffer 
+            length_last_org_term = length_org_term
+
+        return span_mapping
+
     def _get_buffer_normalized(self, buffer: str) -> str:
         tokens = self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer))
-        return self.__normalizer.normalize(self.__tokenizer.join(tokens))
+        return self.__tokenizer.join((self.__normalizer.normalize(token), _) for token, _ in tokens)
