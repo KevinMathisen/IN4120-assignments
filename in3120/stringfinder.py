@@ -27,8 +27,8 @@ class StringFinder:
         self.__normalizer = normalizer  # The same as was used for trie building.
         self.__tokenizer = tokenizer  # The same as was used for trie building.
 
-        self.__output: Dict[Trie, List[str]] = {}
-        self.__failure: Dict[Trie, Trie] = {}   # key: node to find failure for, value: where to move if key has failure
+        self.__output: Dict[Trie, List[str]] = {} # key: node, value: list of strings that end in node (may include multiple strings because of failure tree)
+        self.__failure: Dict[Trie, Trie] = {}   # key: node , value: where to move if key has failure
 
         self.__build_output()
         self.__build_failure()
@@ -51,12 +51,12 @@ class StringFinder:
         In a serious application we'd add more lookup/evaluation features, e.g., support for prefix matching,
         support for leftmost-longest matching (instead of reporting all matches), and more.
         """
-        # space_normalized_buffer = self.__tokenizer.join(self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer)))    # Used for outputting surface
-        normalized_buffer = self._get_buffer_normalized(buffer)                                                             # Used for matching with trie  
-        org_term_positions = self._get_normalized_span_to_span_mapping(self.__tokenizer.tokens(buffer))                          # Used for finding buffer span values
+        normalized_buffer = self._get_buffer_normalized(buffer)                                         # Used for matching with trie  
+        org_term_positions = self._get_normalized_span_to_span_mapping(self.__tokenizer.tokens(buffer)) # Used for finding location of matches in original buffer
 
-        node = self.__trie
+        node = self.__trie  # Start at root
 
+        # Iterate through all symbols in buffer
         for buffer_symbol_index in range(0, len(normalized_buffer)):
             buffer_symbol = normalized_buffer[buffer_symbol_index]
 
@@ -71,29 +71,28 @@ class StringFinder:
             node = node.child(buffer_symbol)
 
             # Check if output found
-            outputs = self.__output.get(node, [])
-            for match in outputs:
-                match = self._generate_output(match, buffer_symbol_index, buffer, org_term_positions, node.get_meta())
-                if match:
+            for match in self.__output.get(node, []):
+                if match := self._generate_output(match, buffer_symbol_index, buffer, org_term_positions, node.get_meta()):
                     yield match
 
 
     def _generate_output(self, match: str, match_position: int, buffer: str, org_term_positions: int, meta: Any) -> Dict[str, Any]:
+        """Given a potential match, check if it starts and ends on terms, and if so generate its match object"""
+
         # Retrieve positions needed for generating output
         start_pos_buffer = org_term_positions.get((match_position - len(match) + 1, True), -1)
         end_pos_buffer = org_term_positions.get((match_position+1, False), -1)
-
-        surface = self.__tokenizer.join(self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer[start_pos_buffer:end_pos_buffer])))
 
         # Check if match starts and ends at terms
         if start_pos_buffer == -1 or end_pos_buffer == -1:
             return None
 
-        return {"match": match, "surface": surface, 
-                       "meta": meta, "span": (start_pos_buffer, end_pos_buffer)}
+        # Return the surface as the space-normalized and canoncialized version of the buffer
+        surface = self.__tokenizer.join(self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer[start_pos_buffer:end_pos_buffer])))
+        return {"match": match, "surface": surface, "meta": meta, "span": (start_pos_buffer, end_pos_buffer)}
 
     def __build_output(self):
-        # Builds the output by saving where each term ends in the trie, and their value
+        """Builds the output by saving where each term ends in the trie, and their value"""
 
         queue: List[Tuple[Trie, List[str]]] = []
         node: Trie = self.__trie # root
@@ -113,7 +112,10 @@ class StringFinder:
                 queue.append((node.child(symbol), current_term+[symbol]))        
 
     def __build_failure(self):
-        # Builds a failure tree by saving where the scan should move if a failure occurs during scan
+        """
+        Builds a failure tree by saving where the scan should move if a failure occurs during scan
+        Follows the algorithm outlined in the paper for the Aho-Corasick algorithm
+        """
         queue: List[Trie] = []
 
         # Point all nodes with depth 1 to root
@@ -145,23 +147,26 @@ class StringFinder:
                     self.__output.setdefault(node.child(symbol), []).extend(self.__output[fail_node.child(symbol)])
 
     def _get_normalized_span_to_span_mapping(self, tokens: Iterator[Tuple[str, Tuple[int, int]]]) -> Dict[int, Tuple[int, bool]]:
-        # this function is for mapping tokens from the original buffer to their equivalent in the normalized buffer
-        # if achieves this by going through all original tokens,  and calculating the position these are placed in the final normalised buffer
-        #   by using their length (after normalisation) 
-        
+        """
+        This function is for mapping tokens from the original buffer to their equivalent in the normalized buffer
+        It achieves this by going through all original tokens, and calculating the position these are placed in the final normalised buffer
+           by using their length (after normalisation)
+        """
         span_mapping = {}
         normalised_term_start_pos = 0
         end_pos_last_org_term = 0
         length_last_org_term = 0
+
         for org_term in tokens:
-            # Calculate if there was space between this token and the last one
-            space = 0 if org_term[1][0] - end_pos_last_org_term == 0 else 1
-            space = 0 if end_pos_last_org_term == 0 else space
-            normalised_term_start_pos += length_last_org_term+space # Jump to place of next term in normalised buffer
+            # Calculate if there was any white-space between this token and the last one (always defaulting to 0 if this is the first token)
+            space = 0 if org_term[1][0] - end_pos_last_org_term == 0 else 0 if end_pos_last_org_term == 0 else 1
+            # Jump to place of next term in normalised buffer
+            normalised_term_start_pos += length_last_org_term+space
             end_pos_last_org_term = org_term[1][1]
 
             # Cant assume that term length after normalization is same as before
             length_org_term = len(self.__normalizer.normalize(self.__normalizer.canonicalize(org_term[0])))
+
             span_mapping[(normalised_term_start_pos, True)] = org_term[1][0] # Save start position of term to the place it appears in normalised buffer
             span_mapping[(normalised_term_start_pos+length_org_term, False)] = org_term[1][1] # Save end position of term to the place it appear in normalised buffer 
             length_last_org_term = length_org_term
