@@ -1,0 +1,35 @@
+simple in-memory inverted index 
+	(same as A)
+
+query
+	m unique terms
+	t treshold, e.g. 0.7
+	documents should contain n of terms in query
+		n = max(1, min(m, int(t * m)))
+
+document-at-a-time traversal
+	for all terms posting lists
+		iterate trough them, taking into account how many have to match
+		
+		between AND and OR in A
+
+		iterate trough all postings lists	
+			increment least of the postings 
+				
+			when find docId in all lists over treshold	
+				return docId
+				increment all matches (which are the least)
+
+			when less posting lists than treshold, stop
+
+documents ranked and yielded back according to relevancy
+	Sieve for sifting documents and their score
+
+	use simpleranker
+		document containing more unique terms rank higher
+		terms occuring more in query should have higher rank weight
+
+	ranker = ranker()
+	ranker.reset(docID) // for initializing for docID
+	ranker.update(term, multiplicity, posting) // for each posting, for each term, it should add the score
+	ranker.evaluate() // returns the final score

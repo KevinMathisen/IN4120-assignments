@@ -4,12 +4,14 @@
 # pylint: disable=too-many-locals
 
 from collections import Counter
-from typing import Iterator, Dict, Any
+from typing import List, Iterator, Dict, Any
 from .sieve import Sieve
 from .ranker import Ranker
 from .corpus import Corpus
 from .invertedindex import InvertedIndex
-
+from .posting import Posting
+from .normalizer import SimpleNormalizer
+from .tokenizer import SimpleTokenizer
 
 class SimpleSearchEngine:
     """
@@ -46,4 +48,57 @@ class SimpleSearchEngine:
         N is inferred from the query via the "match_threshold" (float) option, and the maximum number of documents
         to return to the client is controlled via the "hit_count" (int) option.
         """
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        # Get terms (as Counter) from query
+        terms = self._get_counter_terms(query)
+        # cauclate n (default m), and k (default 100)
+        n = max(1, min(len(terms), int((options["match_threshold"] if options["match_threshold"] else 1) * len(terms))))
+        k = options["hit_count"] if options["hit_count"] else 100 
+        top_docs = Sieve(k)
+
+        # Retrieve the posting lists from the inverted index for the terms in the query
+        posting_lists = (self.__inverted_index.get_postings_iterator(term) for term in sorted(terms))
+        # TODO: remove empty iterators
+        # TODO: maybe have posting_lists be [(posting_iter, term), (), ...]
+
+        # Go trough the all the postings lists at the same time        
+        while len(posting_lists) >= n:
+            smallest_doc_ids = (-1, []) # TODO: use infinite
+            # check how many smallest
+            for posting in posting_lists:
+                if smallest_doc_ids[0] == -1 or posting.document_id < smallest_doc_ids[0]:
+                    smallest_doc_ids = (posting.document_id, [posting]) # TODO: save term for each posting
+                elif posting.document_id == smallest_doc_ids[0]:
+                    smallest_doc_ids[1].append(posting)
+
+            # if over treshold n, calculate/add to sieve
+            if len(smallest_doc_ids[1]) >= n:
+                ranker.reset(smallest_doc_ids[0])
+                for posting in smallest_doc_ids[1]: # TODO: get the term for each posting
+                    ranker.update(term, terms[term], posting)
+                top_docs.sift(ranker.evaluate(), smallest_doc_ids[0])
+
+            # increment all smallest
+            for posting in smallest_doc_ids[1]:
+                posting = next(posting, None)
+            # if no more to increment, remove from postingslists
+            # also, ensure that this will actually update the posting in the posting_lists
+
+            # TODO: reset smallest docids (maybe, might be able to keep for performance)
+
+        # yield sieve
+        yield from ({"score": doc[0], "document": self.__corpus.get_document(doc[1])} for doc in top_docs.winners())
+
+
+    def _soft_union(self, posting_lists: List[Iterator[Posting]], n: int) -> Iterator[Posting]:
+        # Should go through all posting lists at the same time
+        # The pointer(s) to the posting with the least ID should be incremented
+        # When pointers with same ID is over n (treshold), 
+        #       caclulate its score by going through all terms, and add it to the sieve
+        # when there are fewer postings lists left to iterate than n, exit the function
+
+        yield iter()
+    
+    def _get_counter_terms(self, query: str) -> Counter:
+        tokens = (SimpleNormalizer.normalize(t) for t in SimpleTokenizer.strings(SimpleNormalizer.canonicalize(query)))
+        return Counter(tokens)
+        
