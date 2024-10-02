@@ -8,7 +8,7 @@ note innlevering
 	Likevel tror jeg løsningen jeg skrev er mer effektiv enn hvis man skulle brukt live_states, ettersom at den bruker failure trees og ikke trenger å vurdere flere states hver tur. 
 	Men dette kommer på bekostning av at den tar lenger tid å initialisere stringfinder, siden failure og output må bygges (som beskrevet i aho corasick algoritmen)
 
-	Håper det går fint at jeg løste på denne måten, selv om denne sannynligvis blir vanskligere å rette. Alle testene kjører uten problemer i hvert fall.
+	Håper det går fint at jeg løste på denne måten, selv om denne sannynligvis blir vanskligere å rette. Alle testene kjører uten problemer.
 
 
 build simple suffix index
@@ -68,7 +68,47 @@ Implement version of Aho-Corasick Algorithm
 
 			return results in order of input buffer
 
-		algorithm
+
+		algo live states
+			list of live states, containing:
+				match_so_far	// normalized match, equivalent to path in trie
+				surface_so_far	// unnormalized match
+				start_pos  		// where live_state started
+
+
+			for term in buffer 				// get terms-location tuple, so (term, (start_pos, end_pos))
+				
+				normalize term to use for search
+					normalized_term
+
+				for live_state in live_states:			// check if live_states are still valid
+
+					still match with new term?
+						yes: update match to include term	
+							match_so_far += normalized_term		// might need to also add space before new term
+							surface_so_far += term
+
+							if final state -> yield output(...)
+						no: remove from live state
+
+
+				does this match the root of the trie 	// check if a new live_state can be made, basically if a new match is possible
+
+					yes: add this to live state
+						match_so_far = normalised 
+						surface_so_far = term
+						start_pos = term.start_pos
+
+						if final state -> yield output(...)
+
+				output(...):
+					return 
+						pos: (live_state.start_pos, term.start_pos)
+						match: live_state.match_so_far
+						surface: live_state.surface_so_far 
+
+
+		algorithm complex
 
 			use keywords (dictionary) to construct a finite state pattern mactfhing machine
 				takes time proportional to length of sum of keywords

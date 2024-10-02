@@ -8,7 +8,7 @@ The purpose of this assignment is to implement a simple query evaluator that eff
 
 Note that _n_-of-_m_ matching can be viewed as a type of "soft `AND`" evaluation, where the degree of match can be smoothly controlled to mimic either an `OR` evaluation (1-of-_m_), or an `AND` evaluation (_m_-of-_m_), or something in between.
 
-The evaluator should use the client-supplied ratio _t = n/m_ as a parameter as specified by the client on a per query basis. For example, for the query _john paul george ringo_ we have _m = 4_ and a specified threshold of _t = 0.7_ would imply that at least 3 of the 4 query terms have to be present in a matching document. You can infer _n_ as:
+The evaluator should use the client-supplied ratio _t = n/m_ as a parameter as specified by the client on a per query basis. For example, for the query _john paul george ringo_ we have _m = 4_ and a specified threshold of _t = 0.75_ would imply that at least 3 of the 4 query terms have to be present in a matching document. You can infer _n_ as:
 
     n = max(1, min(m, int(t * m)))
 
@@ -41,14 +41,15 @@ Example output:
 
 ```
 >cd tests
->python3 assignments.py c
-test_document_at_a_time_traversal_mesh_corpus (tests.TestSimpleSearchEngine) ... ok
-test_mesh_corpus (tests.TestSimpleSearchEngine) ... ok
-test_synthetic_corpus (tests.TestSimpleSearchEngine) ... ok
-test_uses_yield (tests.TestSimpleSearchEngine) ... ok
+>python3 assignments.py c-1
+test_canonicalized_corpus (test_simplesearchengine.TestSimpleSearchEngine.test_canonicalized_corpus) ... ok
+test_document_at_a_time_traversal_mesh_corpus (test_simplesearchengine.TestSimpleSearchEngine.test_document_at_a_time_traversal_mesh_corpus) ... ok
+test_mesh_corpus (test_simplesearchengine.TestSimpleSearchEngine.test_mesh_corpus) ... ok
+test_synthetic_corpus (test_simplesearchengine.TestSimpleSearchEngine.test_synthetic_corpus) ... ok
+test_uses_yield (test_simplesearchengine.TestSimpleSearchEngine.test_uses_yield) ... ok
 
 ----------------------------------------------------------------------
-Ran 4 tests in 1.798s
+Ran 5 tests in 0.390s
 
 OK
 ```
