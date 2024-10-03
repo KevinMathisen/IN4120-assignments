@@ -48,9 +48,8 @@ class SimpleSearchEngine:
         N is inferred from the query via the "match_threshold" (float) option, and the maximum number of documents
         to return to the client is controlled via the "hit_count" (int) option.
         """
-        # Get terms (as Counter) from query
+        # Get terms (as Counter) from query, calculate n (default m), and calculate k (default 100)
         terms = self._get_counter_terms(query)
-        # cauclate n (default m), and k (default 100)
         n = max(1, min(len(terms), int((options["match_threshold"] if options["match_threshold"] else 1) * len(terms))))
         k = options["hit_count"] if options["hit_count"] else 100 
 
@@ -71,50 +70,38 @@ class SimpleSearchEngine:
         The documents are then ordered by using Sieve
         """
         top_docs = Sieve(k)
-        # Start at head
-        current_postings = [(next(posting_list_head, None), term) for (posting_list_head, term) in posting_iterators]
 
-        # Remove all None elements from current_postings and corresponding iterators
-        posting_lists_to_remove = [i for i, (posting, term) in enumerate(current_postings) if posting is None]
-        for i in sorted(posting_lists_to_remove, reverse=True):
-            posting_iterators.pop(i)
-            current_postings.pop(i)
+        # List of (posting, iterator, term) for each of the posting lists. Start postings at head.
+        current_postings = [(posting, posting_iter, t) for (posting_iter, t) in posting_iterators if (posting := next(posting_iter, None)) is not None]
 
         # Go through all postings lists using document-at-a-time until no more matches possible      
-        while len(posting_iterators) >= n:
-            smallest_doc_ids = (-1, [])
-            
-            # Find the smallest docIDs of the iterators, saving their postings and terms
-            for i, (posting, term) in enumerate(current_postings):
-                if smallest_doc_ids[0] == -1 or posting.document_id < smallest_doc_ids[0]:
-                    smallest_doc_ids = (posting.document_id, [(i, posting, term)])
-                elif posting.document_id == smallest_doc_ids[0]:
-                    smallest_doc_ids[1].append((i, posting, term))
+        while len(current_postings) >= n:
+
+            # Find the smallest docID of the iterators, saving the document postings and terms
+            smallest_doc_id = min(posting.document_id for posting, _, _ in current_postings)
+            smallest_doc_postings = [(i, posting, posting_iter, t) for i, (posting, posting_iter, t) in enumerate(current_postings) if posting.document_id == smallest_doc_id]
 
             # If the smallest docID has postings over treshold n, calculate its score and sift through sieve
-            if len(smallest_doc_ids[1]) >= n:
-                ranker.reset(smallest_doc_ids[0])
-                for (i, posting, term) in smallest_doc_ids[1]:
+            if len(smallest_doc_postings) >= n:
+                ranker.reset(smallest_doc_id)
+                for (_, posting, _, term) in smallest_doc_postings:
                     ranker.update(term, terms[term], posting)
-                top_docs.sift(ranker.evaluate(), smallest_doc_ids[0])
+                top_docs.sift(ranker.evaluate(), smallest_doc_id)
 
             # Increment all smallest postings, removing them from posting lists when done
             posting_lists_to_remove = []
-            for (i, posting, term) in smallest_doc_ids[1]:
+            for (i, posting, posting_iter, term) in smallest_doc_postings:
                 try:
-                    current_postings[i] = (next(posting_iterators[i][0]), term)
+                    current_postings[i] = (next(posting_iter), posting_iter, term)
                 except StopIteration:
                     posting_lists_to_remove.append(i)
 
             for i in sorted(posting_lists_to_remove, reverse=True):
-                    posting_iterators.pop(i)
-                    current_postings.pop(i)
+                current_postings.pop(i)
 
         return top_docs
     
     def _get_counter_terms(self, query: str) -> Counter:
-        normalizer = SimpleNormalizer()
-        tokenizer = SimpleTokenizer()
-        tokens = (normalizer.normalize(t) for t in tokenizer.strings(normalizer.canonicalize(query)))
+        tokens = (SimpleNormalizer().normalize(t) for t in SimpleTokenizer().strings(SimpleNormalizer().canonicalize(query)))
         return Counter(tokens)
         
