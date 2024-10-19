@@ -102,6 +102,6 @@ class SimpleSearchEngine:
         return top_docs
     
     def _get_counter_terms(self, query: str) -> Counter:
-        tokens = (SimpleNormalizer().normalize(t) for t in SimpleTokenizer().strings(SimpleNormalizer().canonicalize(query)))
+        tokens = self.__inverted_index.get_terms(query)
         return Counter(tokens)
         
