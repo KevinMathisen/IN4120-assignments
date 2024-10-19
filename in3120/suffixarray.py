@@ -1,11 +1,11 @@
 # pylint: disable=missing-module-docstring
 # pylint: disable=line-too-long
 
-import sys
 from bisect import bisect_left
 from itertools import takewhile
-from typing import Any, Dict, Iterator, Iterable, Tuple, List
+from typing import Dict, Iterator, Iterable, Tuple, List
 from collections import Counter
+from .document import Document
 from .corpus import Corpus
 from .normalizer import Normalizer
 from .tokenizer import Tokenizer
@@ -34,65 +34,35 @@ class SuffixArray:
         Builds a simple suffix array from the set of named fields in the document collection.
         The suffix array allows us to search across all named fields in one go.
         """
-        for document in self.__corpus:
-            document_content = ""
+        # We allow searching across multiple document fields simultaneously, so join the named fields
+        # to produce the haystack that we'll search for needles in. Avoid cross-field matches.
+        self.__haystack = [(d.document_id, " \0 ".join(self.__normalize(d.get_field(f, "")) for f in fields)) for d in self.__corpus]
 
-            # Normalize and combine all fields in the document
-            for field in fields:
-                document_content += (self.__normalize(document.get_field(field, "")) + " ")
-            document_content = document_content.strip()
-
-            # Insert document content into haystack as (<doc_id>, <content>)
-            self.__haystack.append((document.get_document_id(), document_content))
-
-            # Find and insert offsets for all suffixes as [doc_id, offset]   
-            for term_position in self.__tokenizer.spans(document_content):
-                self.__suffixes.append((len(self.__haystack)-1, term_position[0]))
-
-        # Sort all suffixes based on the lexicographical order of the haystack/content
-        self.__suffixes.sort(key=lambda suffix: self.__haystack[suffix[0]][1][suffix[1]:])
+        # We don't actually store all suffixes, instead we store (index, offset) pairs which allows us
+        # to generate the suffixes if/when we need them: The index identifies the document, and the
+        # offset identifies where in the document the substring starts. A naive suffix array generation
+        # is fine for now.
+        self.__suffixes = [(index, begin) for index, (_, buffer) in enumerate(self.__haystack) for begin, _ in self.__tokenizer.spans(buffer)]
+        self.__suffixes.sort(key=self.__get_suffix)
 
     def __normalize(self, buffer: str) -> str:
         """
         Produces a normalized version of the given string. Both queries and documents need to be
         identically processed for lookups to succeed.
         """
+        # Tokenize and join to be robust to nuances in whitespace and punctuation.
         tokens = self.__tokenizer.tokens(self.__normalizer.canonicalize(buffer))
-        return self.__normalizer.normalize(self.__tokenizer.join(tokens))
+        tokens = ((self.__normalizer.normalize(t), _) for t, _ in tokens)
+        return self.__tokenizer.join(tokens)
 
-    def __binary_search(self, needle: str) -> int:
+    def __get_suffix(self, pair: Tuple[int, int]) -> str:
         """
-        Does a binary search for a given normalized query (the needle) in the suffix array (the haystack).
-        Returns the position in the suffix array where the normalized query is either found, or, if not found,
-        should have been inserted.
-
-        Kind of silly to roll our own binary search instead of using the bisect module, but seems needed
-        prior to Python 3.10 due to how we represent the suffixes via (index, offset) tuples. Version 3.10
-        added support for specifying a key.
+        Produces the suffix/substring from the normalized document buffer for the given (index, offset) pair.
         """
-        # Define initial search area
-        search_start_index = 0
-        search_end_index = len(self.__suffixes)-1
+        index, offset = pair
+        return self.__haystack[index][1][offset:]  # Slicing implies copying. This should be possible to avoid.
 
-        while True:
-            # If we only have one suffix left to search, this is where the query should have been inserted
-            if search_start_index >= search_end_index:
-                return search_start_index
-            
-            # Find the suffix content of the middle suffix in our search area
-            evaluating_index = int((search_end_index-search_start_index)/2) + search_start_index
-            evaluating_content = self.__get_suffix_from_suffix_index(evaluating_index)
-
-            # Check if the current suffix matches the query, or if we need to search lower or higher in the suffix array
-            if needle == evaluating_content:
-                return evaluating_index
-            elif needle < evaluating_content:
-                search_end_index = evaluating_index-1
-            else:
-                search_start_index = evaluating_index+1
-
-
-    def evaluate(self, query: str, options: dict) -> Iterator[Dict[str, Any]]:
+    def evaluate(self, query: str, options: dict) -> Iterator[Dict[str, int | Document]]:
         """
         Evaluates the given query, doing a "phrase prefix search".  E.g., for a supplied query phrase like
         "to the be", we return documents that contain phrases like "to the bearnaise", "to the best",
@@ -108,38 +78,34 @@ class SuffixArray:
         The results yielded back to the client are dictionaries having the keys "score" (int) and
         "document" (Document).
         """
-        normalized_query = self.__normalize(query)
-        if normalized_query == "":
-            return iter([])
+        # Search for the needle in the haystack, using binary search. Define that the empty query matches
+        # nothing, not everything.
+        needle = self.__normalize(query)
+        if not needle:
+            return
+        where_start = bisect_left(self.__suffixes, needle, key=self.__get_suffix)
 
-        # Find where we should start our search
-        iterator_index = self.__binary_search(normalized_query)
-        document_frequency = Counter("")
+        # Helper predicate. Checks if the identified suffix starts with the needle. Since slicing implies copying,
+        # cap the length of the slice to the length of the needle. The starts-with relation then becomes the same
+        # as equality, which is quick to check.
+        def _is_match(i: int) -> bool:
+            j, offset = self.__suffixes[i]
+            return self.__haystack[j][1][offset:(offset + len(needle))] == needle
 
-        # Check if the first match contains the query
-        if self.__get_suffix_from_suffix_index(iterator_index).startswith(normalized_query):
-            document_frequency[self.__get_doc_id_from_suffix_index(iterator_index)] += 1
+        # Suffixes sharing a prefix are consecutive in the suffix array. Scan ahead from the located index until
+        # we no longer get a match. We expect a low number of matches for typical queries, and we process all the
+        # matches below anyway. If we just wanted to count the number of matches without processing them, we
+        # could instead of a linear scan do another binary search to locate where the range ends.
+        matches = takewhile(_is_match, range(where_start, len(self.__suffixes)))
 
-        # Move down the array as long the predix match, counting the amount of times each document appear
-        while iterator_index+1 < len(self.__suffixes) and self.__get_suffix_from_suffix_index(iterator_index+1).startswith(normalized_query):
-            iterator_index += 1
-
-            document_frequency[self.__get_doc_id_from_suffix_index(iterator_index)] += 1
-
-        # Convert Counter to array of (<frequency>, <document_id>), compatible with Sieve
-        documents_found = [(document_frequency[doc_id], doc_id) for doc_id in sorted(document_frequency)]
-
-        # Cut off and rank documents based on their score, using the max hit_count when provided
-        documents_sieve = Sieve(options["hit_count"] if options["hit_count"] else len(documents_found))
-        documents_sieve.sift2(documents_found)
-
-        # Return all documents within cutoff arranged by score
-        for document in documents_sieve.winners():
-            yield {"score": document[0], "document": self.__corpus.__getitem__(document[1])}
-
-    def __get_suffix_from_suffix_index(self, suffix_index: int) -> str:
-        return self.__haystack[self.__suffixes[suffix_index][0]][1][self.__suffixes[suffix_index][1]:]
-    
-    def __get_doc_id_from_suffix_index(self, suffix_index: int) -> str:
-        return self.__haystack[self.__suffixes[suffix_index][0]][0]
-    
+        # Deduplicate. A document in the haystack might contain multiple occurrences of the needle.
+        # Rank according to occurrence count, and emit in ranked order.
+        if matches:
+            debug = options.get("debug", False)
+            pairs = [self.__suffixes[i] for i in matches]
+            if debug:
+                for pair in pairs:
+                    print("*** MATCH", pair, self.__get_suffix(pair))
+            counter = Counter([i for i, _ in pairs])
+            for index, count in counter.most_common(max(1, min(100, options.get("hit_count", 10)))):
+                yield {"score": count, "document": self.__corpus[self.__haystack[index][0]]}
