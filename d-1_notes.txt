@@ -1,0 +1,64 @@
+ShingleGenerator
+producing k grams
+	for each char in buffer
+		add to existing shingles
+			when reached end of k for an existing shingle, yield
+			when reached end of buffer, yield smal shingle if none other returned, 
+				else end function
+
+
+BetterRanked 
+	reset
+		reset score and set docid
+
+	update
+		takes in 
+			term, multiplicity, posting (doc id, term frequency)
+
+		Needs
+			tf-idf score
+				times term occur in document
+				number of document
+				number of docs containing term (document freq dictionary)
+
+			static doc score (default 0.0)
+				add to score
+
+			also scale score directly with multiplicity
+
+
+	evaluate
+		yield score
+
+
+
+sparedocumentvector
+	get_length
+		square root ( sum (squared(dimension)))
+
+	normalize
+		divide all lengths by get_length
+
+	top
+		use Sieve to store and return n best terms
+
+	truncate
+		use Sieve to find best terms
+		remove all other terms
+		(update self._length?)
+
+	scale
+		multiply all components by factor
+
+	dot
+		dot product of this and given vector
+			multiply all components
+				(with 0 if no from other vector)
+			sum all of this
+
+	cosine
+		find cosine anble between vectors
+		dot product / (get_length each vector, product of this)
+
+	centroid
+		sum coordinate for each component, divide by amount of vectors
