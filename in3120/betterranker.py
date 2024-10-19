@@ -33,10 +33,23 @@ class BetterRanker(Ranker):
         self._inverted_index = inverted_index
 
     def reset(self, document_id: int) -> None:
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        self._document_id = document_id
+        self._score = 0.0
 
     def update(self, term: str, multiplicity: int, posting: Posting) -> None:
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        assert self._document_id == posting.document_id
+
+        # Get numbers needed to calculate td_idf
+        term_freq = posting.term_frequency
+        total_num_documents = self._corpus.size()
+        document_freq = self._inverted_index.get_document_frequency(term)
+
+        tf_idf_score = math.log10(1+term_freq) * math.log10(total_num_documents/document_freq)
+
+        # Find static score if specified, default 0
+        static_doc_score = self._corpus.get_document(posting.document_id).get_field("static_quality_score", 0.0)
+
+        self._score += (static_doc_score + tf_idf_score) * multiplicity
 
     def evaluate(self) -> float:
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        return self._score
