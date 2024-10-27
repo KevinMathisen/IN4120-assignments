@@ -50,20 +50,61 @@ class NaiveBayesClassifier:
         Estimates all prior probabilities (or, rather, log-probabilities) needed for
         the naive Bayes classifier.
         """
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        # for each language/class in training set
+        #   count how many documents in it
+        # 
+        # its prior is simpy num_of_docs / total_num_of_docs
+
+        # add them to self.__priors     // "class": log(prior)
+        total_documents = sum([documents.size() for documents in training_set.values()])
+
+        for (class_name, class_documents) in training_set.items():
+            self.__priors[class_name] = math.log(class_documents.size() / total_documents)
 
     def __compute_vocabulary(self, training_set, fields) -> None:
         """
         Builds up the overall vocabulary as seen in the training set.
         """
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        # All unique terms in all of the classes
+        # Add them to self.__vocabulary using add_if_absent
+        training_set = " ".join(
+            [document.get_field(field, "") for class_documents in training_set.values() for document in class_documents for field in fields]
+        )
+        for term in self.__get_terms(training_set):
+            self.__vocabulary.add_if_absent(term)
 
     def __compute_posteriors(self, training_set, fields) -> None:
         """
         Estimates all conditional probabilities (or, rather, log-probabilities) needed for
         the naive Bayes classifier.
         """
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        # for each category
+        #   add all text from the category in specified fields together, forming the terms
+        #       (also normalize)
+        #
+        #   place denominator in self.__denominators
+        #       which is total_occurances_of_all_terms + size_of_vocabulary
+        #
+        #   using this text,
+        #     for each term: compute the posterior score using add-one smooting:
+        #           occurences_of_term(counter) + 1
+        #               -------------------
+        #           self.__denominators(class)
+        #     
+        #       place this in self.__conditionals   //  [class][term]: log(score)
+        for (class_name, class_documents) in training_set.items():
+            text_for_class = " ".join([document.get_field(field, "") for document in class_documents for field in fields])
+            
+            terms = list(self.__get_terms(text_for_class))
+
+            self.__denominators[class_name] = len(terms) + self.__vocabulary.size()
+
+            term_occurances = Counter(terms)
+
+            for (term, _) in self.__vocabulary:
+                score = math.log((term_occurances[term]+1)/(self.__denominators[class_name]))
+                self.__conditionals.setdefault(class_name, {})
+                self.__conditionals[class_name][term] = score
 
     def __get_terms(self, buffer) -> Iterator[str]:
         """
@@ -88,7 +129,11 @@ class NaiveBayesClassifier:
 
         This is an internal detail having public visibility to facilitate testing.
         """
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        # Lookup in self.__conditionals
+        if self.__vocabulary.get_term_id(term) == None:
+            return 0.0
+        
+        return self.__conditionals[category][term]
 
     def classify(self, buffer: str) -> Iterator[Dict[str, Any]]:
         """
@@ -98,5 +143,21 @@ class NaiveBayesClassifier:
 
         The results yielded back to the client are dictionaries having the keys "score" (float) and
         "category" (str).
+
+        e.g. 
+        dict("score": 1, "category": "eng")
+        dict("score": 0, "category": no")
         """
-        raise NotImplementedError("You need to implement this as part of the obligatory assignment.")
+        # For each category
+        #   interate over each term in buffer, caulcating each posterior score          (ignore term if not in vocabulary)
+        #   compute score for each category by: prior(category) + sum(posterior(term))  // can add scores because log
+        terms = self.__get_terms(buffer)
+
+        scores = []
+        for category in self.__priors.keys():
+            posterior_scores = [self.get_posterior(category, term) for term in terms]
+            category_score = self.get_prior(category) + sum(posterior_scores)
+
+            scores.append({"score": category_score, "category": category})
+
+        yield from sorted(scores, key=lambda x: x["score"], reverse=True)
