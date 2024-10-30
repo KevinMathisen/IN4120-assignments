@@ -151,13 +151,14 @@ class NaiveBayesClassifier:
         # For each category
         #   interate over each term in buffer, caulcating each posterior score          (ignore term if not in vocabulary)
         #   compute score for each category by: prior(category) + sum(posterior(term))  // can add scores because log
-        terms = self.__get_terms(buffer)
+        terms = list(self.__get_terms(buffer))
 
         scores = []
         for category in self.__priors.keys():
-            posterior_scores = [self.get_posterior(category, term) for term in terms]
-            category_score = self.get_prior(category) + sum(posterior_scores)
+            category_score = self.get_prior(category)
+            for term in terms:
+                category_score += self.get_posterior(category, term)
 
             scores.append({"score": category_score, "category": category})
-
+ 
         yield from sorted(scores, key=lambda x: x["score"], reverse=True)
