@@ -50,14 +50,9 @@ class NaiveBayesClassifier:
         Estimates all prior probabilities (or, rather, log-probabilities) needed for
         the naive Bayes classifier.
         """
-        # for each language/class in training set
-        #   count how many documents in it
-        # 
-        # its prior is simpy num_of_docs / total_num_of_docs
-
-        # add them to self.__priors     // "class": log(prior)
         total_documents = sum([documents.size() for documents in training_set.values()])
 
+        # Calculate the prior for each class by divinding their document count with the total document count
         for (class_name, class_documents) in training_set.items():
             self.__priors[class_name] = math.log(class_documents.size() / total_documents)
 
@@ -65,8 +60,6 @@ class NaiveBayesClassifier:
         """
         Builds up the overall vocabulary as seen in the training set.
         """
-        # All unique terms in all of the classes
-        # Add them to self.__vocabulary using add_if_absent
         training_set = " ".join(
             [document.get_field(field, "") for class_documents in training_set.values() for document in class_documents for field in fields]
         )
@@ -78,29 +71,18 @@ class NaiveBayesClassifier:
         Estimates all conditional probabilities (or, rather, log-probabilities) needed for
         the naive Bayes classifier.
         """
-        # for each category
-        #   add all text from the category in specified fields together, forming the terms
-        #       (also normalize)
-        #
-        #   place denominator in self.__denominators
-        #       which is total_occurances_of_all_terms + size_of_vocabulary
-        #
-        #   using this text,
-        #     for each term: compute the posterior score using add-one smooting:
-        #           occurences_of_term(counter) + 1
-        #               -------------------
-        #           self.__denominators(class)
-        #     
-        #       place this in self.__conditionals   //  [class][term]: log(score)
+        # Iterate through each class 
         for (class_name, class_documents) in training_set.items():
             text_for_class = " ".join([document.get_field(field, "") for document in class_documents for field in fields])
             
             terms = list(self.__get_terms(text_for_class))
 
+            # Calculate the class denominator by adding the amount of terms in the class, and the amount of uniqe terms in the classifer (Because of Laplace smoothing)
             self.__denominators[class_name] = len(terms) + self.__vocabulary.size()
 
             term_occurances = Counter(terms)
 
+            # Calculate the posteriors for each term by using the term occurance in the class, adding 1, and dividing on the demonitator for the class
             for (term, _) in self.__vocabulary:
                 score = math.log((term_occurances[term]+1)/(self.__denominators[class_name]))
                 self.__conditionals.setdefault(class_name, {})
@@ -148,17 +130,16 @@ class NaiveBayesClassifier:
         dict("score": 1, "category": "eng")
         dict("score": 0, "category": no")
         """
-        # For each category
-        #   interate over each term in buffer, caulcating each posterior score          (ignore term if not in vocabulary)
-        #   compute score for each category by: prior(category) + sum(posterior(term))  // can add scores because log
         terms = list(self.__get_terms(buffer))
 
         scores = []
         for category in self.__priors.keys():
+            # Calculate the score for each category by taking the sum of the category prior score and the term-category posterior scores
             category_score = self.get_prior(category)
             for term in terms:
                 category_score += self.get_posterior(category, term)
 
             scores.append({"score": category_score, "category": category})
  
+        # Sort the category scores based on their score in decending order
         yield from sorted(scores, key=lambda x: x["score"], reverse=True)
