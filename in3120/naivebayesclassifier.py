@@ -1,7 +1,6 @@
 # pylint: disable=missing-module-docstring
 # pylint: disable=line-too-long
 
-from functools import reduce
 import math
 from collections import Counter
 from typing import Any, Dict, Iterable, Iterator
@@ -60,7 +59,7 @@ class NaiveBayesClassifier:
         total_documents = sum([documents.size() for documents in training_set.values()])
 
         for (class_name, class_documents) in training_set.items():
-            self.__priors[class_name] = class_documents.size() / total_documents
+            self.__priors[class_name] = math.log(class_documents.size() / total_documents)
 
     def __compute_vocabulary(self, training_set, fields) -> None:
         """
@@ -103,7 +102,7 @@ class NaiveBayesClassifier:
             term_occurances = Counter(terms)
 
             for (term, _) in self.__vocabulary:
-                score = (term_occurances[term]+1)/(self.__denominators[class_name])
+                score = math.log((term_occurances[term]+1)/(self.__denominators[class_name]))
                 self.__conditionals.setdefault(class_name, {})
                 self.__conditionals[class_name][term] = score
 
@@ -122,7 +121,7 @@ class NaiveBayesClassifier:
 
         This is an internal detail having public visibility to facilitate testing.
         """
-        return math.log(self.__priors[category])
+        return self.__priors[category]
 
     def get_posterior(self, category: str, term: str) -> float:
         """
@@ -134,7 +133,7 @@ class NaiveBayesClassifier:
         if self.__vocabulary.get_term_id(term) == None:
             return 0.0
         
-        return math.log(self.__conditionals[category][term])
+        return self.__conditionals[category][term]
 
     def classify(self, buffer: str) -> Iterator[Dict[str, Any]]:
         """
@@ -152,19 +151,12 @@ class NaiveBayesClassifier:
         # For each category
         #   interate over each term in buffer, caulcating each posterior score          (ignore term if not in vocabulary)
         #   compute score for each category by: prior(category) + sum(posterior(term))  // can add scores because log
-        terms = list(self.__get_terms(buffer))
+        terms = self.__get_terms(buffer)
 
         scores = []
         for category in self.__priors.keys():
-            all_posterior = 1
-            for term in terms:
-                score = 0.0
-                if self.__vocabulary.get_term_id(term) != None:
-                    score = self.__conditionals[category][term]
-                all_posterior *= score
-
-            prior_score = self.__priors[category]
-            category_score = prior_score * all_posterior
+            posterior_scores = [self.get_posterior(category, term) for term in terms]
+            category_score = self.get_prior(category) + sum(posterior_scores)
 
             scores.append({"score": category_score, "category": category})
 
